@@ -6,6 +6,9 @@
 #include<stdbool.h>
 #include<assert.h>
 
+#define min(a, b) ((a)<(b)?(a):(b))
+#define max(a, b) ((a)>(b)?(a):(b))
+
 #define sfor(var, n) for (uint32_t var = 0; var < (n); var++)
 
 /* width assumed to be multiple of 8 */
@@ -128,8 +131,9 @@ int main(int argc, char * argv[]) {
     float texture_scale;
     Vector2 texture_pos;
 
-    uint32_t frames_per_step = 5;
-    uint32_t frames_till_next = 0;
+    char hint_text[32];
+
+    uint32_t frames_per_step = 4, frames_till_next = 0, hint_timer = 0;
     bool playing = false;
 
     while (!WindowShouldClose()) {
@@ -138,6 +142,13 @@ int main(int argc, char * argv[]) {
         texture_pos = (Vector2) {
             (float)GetScreenWidth()/2 - (float)cells->w * texture_scale/2, 0
         };
+
+        if (GetMouseWheelMove()) {
+            frames_per_step = min(max(1, frames_per_step - GetMouseWheelMove()), 20);
+            snprintf(hint_text, 32, "sim speed: %3.1f", 10.0/frames_per_step);
+            hint_timer = 30;
+        }
+
 
         if (IsKeyPressed(KEY_TAB)) update();
         if (IsKeyPressed(KEY_SPACE)) playing = !playing;
@@ -158,6 +169,8 @@ int main(int argc, char * argv[]) {
         BeginDrawing();
         ClearBackground(LIGHTGRAY);
         DrawTextureEx(*tex, texture_pos, 0, texture_scale, WHITE);
+        if (hint_timer)
+            DrawText(hint_text, 10, 10, 40, BLACK), hint_timer--;
         EndDrawing();
     }
 
