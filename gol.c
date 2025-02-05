@@ -18,20 +18,6 @@ typedef int32_t i32;
 typedef uint8_t u8;
 typedef float fl;
 
-#define USAGE \
-    "usage: %s [-h|--help] | [[width] [height]]\n"
-#define USAGE_EXT\
-    " * width and height are rounded up to the nearest 8\n"\
-    "  left click - spawn cell\n"\
-    "  right click - kill cell\n"\
-    "  middle click - pan\n"\
-    "  scroll - zoom\n"\
-    "  LShift + scroll - zoom\n"\
-    "  tab - step\n"\
-    "  space - play/pause\n"
-
-#define USAGE_FMT argv[0]
-
 /* width assumed to be multiple of 8 */
 typedef struct {
     u32 w; u32 h;
@@ -60,6 +46,10 @@ void set_cell(cells_t * cells, bool on, u32 x, u32 y) {
     index = x/8 + y * (cells->w/8), bit = x % 8;
     if (on) cells->data[index] |=  (1 << bit);
     else cells->data[index] &= ~(1 << bit);
+}
+
+void clear(cells_t * cells) {
+    memset(cells->data, 0, cells->w/8 * cells->h);
 }
 
 /* won't count higher than 4 */
@@ -120,18 +110,25 @@ Texture2D * cells_to_texture(cells_t * cells) {
     return &tex;
 }
 
+void set_cells(cells_t * cells, bool value, i32 d, i32 x, i32 y) {
+    for (i32 i = -d/2; i < (d+1)/2; i++)
+    for (i32 j = -d/2; j < (d+1)/2; j++) {
+        set_cell(cells, value, x + i, y + j);
+    }
+}
+
 #define screen_to_cell(xpos, ypos) \
     ((xpos) - texture_pos.x)/texture_scale, ((ypos) - texture_pos.y)/texture_scale
 #define update() step(cells), tex = cells_to_texture(cells)
 
 void loop(cells_t * cells) {
-    const int HINT_TIME = 50;
+    const i32 HINT_TIME = 50;
     const fl ZOOM_RATE = 0.125;
     static Texture2D * tex;
     static char hint_text[32];
     static bool playing = false;
     static fl zoom, pan_x, pan_y;
-    static u32 frames_per_step = 10, step_timer, hint_timer;
+    static u32 frames_per_step = 10, step_timer, hint_timer, brush_size = 1;
 
     if (!tex) tex = cells_to_texture(cells);
     if (!zoom) zoom = cells->w/64.0;
@@ -146,34 +143,37 @@ void loop(cells_t * cells) {
     };
 
     if (GetMouseWheelMove()) {
-        if (IsKeyDown(KEY_LEFT_SHIFT)) {
+        if (IsKeyDown(KEY_LEFT_CONTROL)) {
             frames_per_step = min(max(1, frames_per_step - GetMouseWheelMove()), 20);
             snprintf(hint_text, 32, "sim speed: %3.1f", 10.0/frames_per_step);
             hint_timer = HINT_TIME;
+        } else if (IsKeyDown(KEY_LEFT_SHIFT)) {
+            brush_size = min(max(1, brush_size + GetMouseWheelMove()), 10);
+            snprintf(hint_text, 32, "brush size: %d", brush_size);
+            hint_timer = HINT_TIME;
         } else {
             zoom = min(max(0.5, zoom + GetMouseWheelMove() * ZOOM_RATE * zoom), 100);
-            //snprintf(hint_text, 32, "zoom: %3.1f%%", 100/zoom);
         }
     }
 
-    if (IsKeyPressed(KEY_TAB)) update();
-    if (IsKeyPressed(KEY_SPACE)) playing = !playing;
-
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-        set_cell(cells, true, screen_to_cell(GetMouseX(), GetMouseY()));
+        set_cells(cells, true, brush_size, screen_to_cell(GetMouseX(), GetMouseY()));
         tex = cells_to_texture(cells);
     } else if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
-        set_cell(cells, false, screen_to_cell(GetMouseX(), GetMouseY()));
+        set_cells(cells, false, brush_size, screen_to_cell(GetMouseX(), GetMouseY()));
         tex = cells_to_texture(cells);
     } else if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)) {
         Vector2 delta = GetMouseDelta();
         pan_x += delta.x / texture_scale, pan_y += delta.y / texture_scale;
     }
+    
+    if (IsKeyPressed(KEY_SPACE)) playing = !playing;
+    if (IsKeyPressed(KEY_C)) clear(cells), update();
 
     if (playing) {
         if (step_timer) step_timer--;
         else step_timer = frames_per_step, update();
-    }
+    } else if (IsKeyPressed(KEY_TAB)) update();
 
     BeginDrawing();
     ClearBackground(LIGHTGRAY);
@@ -183,6 +183,23 @@ void loop(cells_t * cells) {
     EndDrawing();
 
 }
+
+#define USAGE \
+    "usage: %s [-h|--help] | [[width] [height]]\n"
+#define USAGE_EXT\
+    " ** width and height are rounded up to the nearest 8\n"\
+    "KEYBINDS:\n"\
+    " left mouse    - spawn cells\n"\
+    " right mouse   - kill cells\n"\
+    " middle mouse  - pan\n"\
+    " scroll        - zoom\n"\
+    " space         - toggle sim\n"\
+    " tab           - step sim\n"\
+    " C             - kill all cells\n"\
+    " lshift+scroll - change brush size\n"\
+    " lctrl+scroll  - change sim speed\n"\
+
+#define USAGE_FMT argv[0]
 
 int main(int argc, char * argv[]) {
     int width = 500, height = 500;
