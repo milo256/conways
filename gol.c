@@ -60,23 +60,23 @@ u8 count_neighbors(cells_t * cells, i32 x, i32 y) {
     return count;
 }
 
-void step(cells_t ** cells) {
+void step(cells_t * cells) {
     static cells_t * new_cells;
-    if (!new_cells) new_cells = cells_alloc((*cells)->w, (*cells)->h);
-    assert(new_cells->w == (*cells)->w);
-    assert(new_cells->h == (*cells)->h);
+    if (!new_cells) new_cells = cells_alloc(cells->w, cells->h);
+    assert(new_cells->w == cells->w);
+    assert(new_cells->h == cells->h);
 
-    sfor(j, (*cells)->h) sfor(i, (*cells)->w) {
-        bool current = get_cell(*cells, i, j);
-        switch (count_neighbors(*cells, i, j)) {
+    sfor(j, cells->h) sfor(i, cells->w) {
+        bool current = get_cell(cells, i, j);
+        switch (count_neighbors(cells, i, j)) {
             case 3: set_cell(new_cells, true, i, j); break;
             case 2: set_cell(new_cells, current, i, j); break;
             default: set_cell(new_cells, false, i, j); break;
         }
     }
-    cells_t * tmp = *cells;
-    *cells = new_cells;
-    new_cells = tmp;
+    cells_t tmp = *cells;
+    *cells = *new_cells;
+    *new_cells = tmp;
 }
 
 Texture2D * cells_to_texture(cells_t * cells) {
@@ -108,7 +108,7 @@ Texture2D * cells_to_texture(cells_t * cells) {
 
 #define screen_to_cell(xpos, ypos) \
     ((xpos) - texture_pos.x)/texture_scale, ((ypos) - texture_pos.y)/texture_scale
-#define update() step(&cells), tex = cells_to_texture(cells)
+#define update() step(cells), tex = cells_to_texture(cells)
 
 void loop(cells_t * cells) {
     const fl ZOOM_RATE = 0.125;
@@ -144,6 +144,11 @@ void loop(cells_t * cells) {
     if (IsKeyPressed(KEY_TAB)) update();
     if (IsKeyPressed(KEY_SPACE)) playing = !playing;
 
+    if (IsKeyPressed(KEY_C)) {
+        snprintf(hint_text, 32, "neighbors: %d", count_neighbors(cells, screen_to_cell(GetMouseX(), GetMouseY())));
+        hint_timer = 30;
+    }
+
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
         set_cell(cells, true, screen_to_cell(GetMouseX(), GetMouseY()));
         tex = cells_to_texture(cells);
@@ -174,7 +179,7 @@ int main(int argc, char * argv[]) {
     if (argc > 1 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")))
         printf("usage: %s [width] [height]\n  left click - spawn cell\n  right click - kill cell\n  tab - step\n  space - play/pause\n", argv[0]), exit(0);
     
-    u32 width = 256, height = 256;
+    u32 width = 32, height = 32;
     if (argc == 2) {
         width = atoi(argv[1]), height = width;
         if (!width || width % 8) width = width/8 * 8, fprintf(stderr, "enter a size divisible by 8\n");
