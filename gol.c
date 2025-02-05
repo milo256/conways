@@ -18,6 +18,20 @@ typedef int32_t i32;
 typedef uint8_t u8;
 typedef float fl;
 
+#define USAGE \
+    "usage: %s [-h|--help] | [[width] [height]]\n"
+#define USAGE_EXT\
+    " * width and height are rounded up to the nearest 8\n"\
+    "  left click - spawn cell\n"\
+    "  right click - kill cell\n"\
+    "  middle click - pan\n"\
+    "  scroll - zoom\n"\
+    "  LShift + scroll - zoom\n"\
+    "  tab - step\n"\
+    "  space - play/pause\n"
+
+#define USAGE_FMT argv[0]
+
 /* width assumed to be multiple of 8 */
 typedef struct {
     u32 w; u32 h;
@@ -111,6 +125,7 @@ Texture2D * cells_to_texture(cells_t * cells) {
 #define update() step(cells), tex = cells_to_texture(cells)
 
 void loop(cells_t * cells) {
+    const int HINT_TIME = 50;
     const fl ZOOM_RATE = 0.125;
     static Texture2D * tex;
     static char hint_text[32];
@@ -127,27 +142,22 @@ void loop(cells_t * cells) {
     texture_scale = GetScreenHeight() / (fl)cells->h * zoom;
     texture_pos = (Vector2) {
         GetScreenWidth()/2.0 - (fl)cells->w * texture_scale/2 + pan_x * texture_scale,
-        pan_y * texture_scale
+        GetScreenHeight()/2.0 - (fl)cells->h * texture_scale/2 + pan_y * texture_scale
     };
 
     if (GetMouseWheelMove()) {
         if (IsKeyDown(KEY_LEFT_SHIFT)) {
             frames_per_step = min(max(1, frames_per_step - GetMouseWheelMove()), 20);
             snprintf(hint_text, 32, "sim speed: %3.1f", 10.0/frames_per_step);
-            hint_timer = 30;
+            hint_timer = HINT_TIME;
         } else {
-            zoom = min(max(0.5, zoom + GetMouseWheelMove() * ZOOM_RATE), 20);
+            zoom = min(max(0.5, zoom + GetMouseWheelMove() * ZOOM_RATE * zoom), 100);
             //snprintf(hint_text, 32, "zoom: %3.1f%%", 100/zoom);
         }
     }
 
     if (IsKeyPressed(KEY_TAB)) update();
     if (IsKeyPressed(KEY_SPACE)) playing = !playing;
-
-    if (IsKeyPressed(KEY_C)) {
-        snprintf(hint_text, 32, "neighbors: %d", count_neighbors(cells, screen_to_cell(GetMouseX(), GetMouseY())));
-        hint_timer = 30;
-    }
 
     if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
         set_cell(cells, true, screen_to_cell(GetMouseX(), GetMouseY()));
@@ -175,24 +185,24 @@ void loop(cells_t * cells) {
 }
 
 int main(int argc, char * argv[]) {
+    int width = 500, height = 500;
 
-    if (argc > 1 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")))
-        printf("usage: %s [width] [height]\n  left click - spawn cell\n  right click - kill cell\n  tab - step\n  space - play/pause\n", argv[0]), exit(0);
-    
-    u32 width = 32, height = 32;
-    if (argc == 2) {
-        width = atoi(argv[1]), height = width;
-        if (!width || width % 8) width = width/8 * 8, fprintf(stderr, "enter a size divisible by 8\n");
-    } else if (argc == 3) {
-        width = atoi(argv[1]), height = atoi(argv[2]);
-        if (!width || width % 8) width = width/8 * 8, fprintf(stderr, "enter a width divisible by 8\n");
-        if (!height || height % 8) height = height/8 * 8, fprintf(stderr, "enter a height divisible by 8\n");
+    if (argc > 1) {
+        if (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help"))
+            return printf(USAGE USAGE_EXT, USAGE_FMT), 0;
+        else width = atoi(argv[1]), height = (argc > 2)? atoi(argv[2]) : width;
     }
+    if (width <= 0 || height <= 0)
+        return printf(USAGE, USAGE_FMT), 0;
+    else width = (width+7)/8 * 8, height = (height+7)/8 * 8;
+
+    printf("starting with board size %dx%d\n", width, height);
+ 
     cells_t * cells = cells_alloc(width, height);
 
     SetTraceLogLevel(LOG_ERROR);
     InitWindow(1400, 1400, "gol");
-    SetTargetFPS(120);
+    SetTargetFPS(60);
 
     while (!WindowShouldClose()) loop(cells);
  
