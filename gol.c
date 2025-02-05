@@ -1,23 +1,30 @@
-#include<raylib.h>
 #include<stdio.h>
 #include<string.h>
 #include<stdlib.h>
+
 #include<stdint.h>
 #include<stdbool.h>
 #include<assert.h>
 
+#include<raylib.h>
+
 #define min(a, b) ((a)<(b)?(a):(b))
 #define max(a, b) ((a)>(b)?(a):(b))
 
-#define sfor(var, n) for (uint32_t var = 0; var < (n); var++)
+#define sfor(var, n) for (u32 var = 0; var < (n); var++)
+
+typedef uint32_t u32;
+typedef int32_t i32;
+typedef uint8_t u8;
+typedef float fl;
 
 /* width assumed to be multiple of 8 */
 typedef struct {
-    uint32_t w; uint32_t h;
-    uint8_t * data;
+    u32 w; u32 h;
+    u8 * data;
 } cells_t;
 
-cells_t * cells_alloc(uint32_t w, uint32_t h) {
+cells_t * cells_alloc(u32 w, u32 h) {
     assert(!(w % 8));
     cells_t * ret = malloc(sizeof(cells_t));
     *ret = (cells_t) { w, h, calloc(w/8 * h, 1) };
@@ -26,26 +33,26 @@ cells_t * cells_alloc(uint32_t w, uint32_t h) {
 
 void cells_free(cells_t * cells) { free(cells->data); free(cells); }
 
-bool get_cell(cells_t * cells, int32_t x, int32_t y) {
-    if (x < 0 || y < 0 || x >= (int32_t) cells->w || y >= (int32_t) cells->h) return false;
-    uint32_t index, bit;
+bool get_cell(cells_t * cells, i32 x, i32 y) {
+    if (x < 0 || y < 0 || x >= (i32) cells->w || y >= (i32) cells->h) return false;
+    u32 index, bit;
     index = x/8 + y * (cells->w/8), bit = x % 8;
     return cells->data[index] & (1 << bit);
 }
 
-void set_cell(cells_t * cells, bool on, uint32_t x, uint32_t y) {
+void set_cell(cells_t * cells, bool on, u32 x, u32 y) {
     if (x >= cells->w || y >= cells->h) return;
-    uint32_t index, bit;
+    u32 index, bit;
     index = x/8 + y * (cells->w/8), bit = x % 8;
     if (on) cells->data[index] |=  (1 << bit);
     else cells->data[index] &= ~(1 << bit);
 }
 
 /* won't count higher than 4 */
-uint8_t count_neighbors(cells_t * cells, int32_t x, int32_t y) {
-    uint32_t count = 0;
-    for (int32_t i = x-1; i <= x+1; i++)
-        for (int32_t j = y-1; j <= y+1; j++) {
+u8 count_neighbors(cells_t * cells, i32 x, i32 y) {
+    u32 count = 0;
+    for (i32 i = x-1; i <= x+1; i++)
+        for (i32 j = y-1; j <= y+1; j++) {
             if (i == x && j == y) continue;
             count += get_cell(cells, i, j);
             if (count == 4) return count;
@@ -74,21 +81,21 @@ void step(cells_t ** cells) {
 
 Texture2D * cells_to_texture(cells_t * cells) {
     static Texture2D tex;
-    static Color * pixels;
-    static uint32_t width, height, loaded;
+    static u8 * pixels;
+    static u32 width, height, loaded;
         
     if (!loaded) {
         width = cells->w, height = cells->h;
-        pixels = malloc(width * height * sizeof(Color)); 
+        pixels = malloc(width * height);
     }
 
     sfor(j, height) sfor(i, width)
-        pixels[j*width + i] = get_cell(cells, i, j)? BLACK : WHITE;
+        pixels[j*width + i] = !get_cell(cells, i, j) * 255;
 
     if (!loaded) {
         Image im = {
             .data = pixels, .width = width, .height = height,
-            .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8A8,
+            .format = PIXELFORMAT_UNCOMPRESSED_GRAYSCALE,
             .mipmaps = 1
         };
         tex = LoadTextureFromImage(im);
@@ -103,13 +110,71 @@ Texture2D * cells_to_texture(cells_t * cells) {
     ((xpos) - texture_pos.x)/texture_scale, ((ypos) - texture_pos.y)/texture_scale
 #define update() step(&cells), tex = cells_to_texture(cells)
 
+void loop(cells_t * cells) {
+    const fl ZOOM_RATE = 0.125;
+    static Texture2D * tex;
+    static char hint_text[32];
+    static bool playing = false;
+    static fl zoom, pan_x, pan_y;
+    static u32 frames_per_step = 10, step_timer, hint_timer;
+
+    if (!tex) tex = cells_to_texture(cells);
+    if (!zoom) zoom = cells->w/64.0;
+    
+    fl texture_scale;
+    Vector2 texture_pos;
+
+    texture_scale = GetScreenHeight() / (fl)cells->h * zoom;
+    texture_pos = (Vector2) {
+        GetScreenWidth()/2.0 - (fl)cells->w * texture_scale/2 + pan_x * texture_scale,
+        pan_y * texture_scale
+    };
+
+    if (GetMouseWheelMove()) {
+        if (IsKeyDown(KEY_LEFT_SHIFT)) {
+            frames_per_step = min(max(1, frames_per_step - GetMouseWheelMove()), 20);
+            snprintf(hint_text, 32, "sim speed: %3.1f", 10.0/frames_per_step);
+            hint_timer = 30;
+        } else {
+            zoom = min(max(0.5, zoom + GetMouseWheelMove() * ZOOM_RATE), 20);
+            //snprintf(hint_text, 32, "zoom: %3.1f%%", 100/zoom);
+        }
+    }
+
+    if (IsKeyPressed(KEY_TAB)) update();
+    if (IsKeyPressed(KEY_SPACE)) playing = !playing;
+
+    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+        set_cell(cells, true, screen_to_cell(GetMouseX(), GetMouseY()));
+        tex = cells_to_texture(cells);
+    } else if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
+        set_cell(cells, false, screen_to_cell(GetMouseX(), GetMouseY()));
+        tex = cells_to_texture(cells);
+    } else if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)) {
+        Vector2 delta = GetMouseDelta();
+        pan_x += delta.x / texture_scale, pan_y += delta.y / texture_scale;
+    }
+
+    if (playing) {
+        if (step_timer) step_timer--;
+        else step_timer = frames_per_step, update();
+    }
+
+    BeginDrawing();
+    ClearBackground(LIGHTGRAY);
+    DrawTextureEx(*tex, texture_pos, 0, texture_scale, WHITE);
+    if (hint_timer)
+        DrawText(hint_text, 10, 10, 40, BLACK), hint_timer--;
+    EndDrawing();
+
+}
+
 int main(int argc, char * argv[]) {
-    int32_t width, height;
-    width = height = 96;
 
     if (argc > 1 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")))
         printf("usage: %s [width] [height]\n  left click - spawn cell\n  right click - kill cell\n  tab - step\n  space - play/pause\n", argv[0]), exit(0);
-
+    
+    u32 width = 256, height = 256;
     if (argc == 2) {
         width = atoi(argv[1]), height = width;
         if (!width || width % 8) width = width/8 * 8, fprintf(stderr, "enter a size divisible by 8\n");
@@ -118,61 +183,13 @@ int main(int argc, char * argv[]) {
         if (!width || width % 8) width = width/8 * 8, fprintf(stderr, "enter a width divisible by 8\n");
         if (!height || height % 8) height = height/8 * 8, fprintf(stderr, "enter a height divisible by 8\n");
     }
-
     cells_t * cells = cells_alloc(width, height);
 
     SetTraceLogLevel(LOG_ERROR);
-    InitWindow(800, 400, "gol");
-    SetTargetFPS(60);
+    InitWindow(1400, 1400, "gol");
+    SetTargetFPS(120);
 
-    Texture2D * tex;
-    tex = cells_to_texture(cells);
-
-    float texture_scale;
-    Vector2 texture_pos;
-
-    char hint_text[32];
-
-    uint32_t frames_per_step = 4, frames_till_next = 0, hint_timer = 0;
-    bool playing = false;
-
-    while (!WindowShouldClose()) {
-        float screen_height = GetScreenHeight();
-        texture_scale = screen_height / (float)cells->h;
-        texture_pos = (Vector2) {
-            (float)GetScreenWidth()/2 - (float)cells->w * texture_scale/2, 0
-        };
-
-        if (GetMouseWheelMove()) {
-            frames_per_step = min(max(1, frames_per_step - GetMouseWheelMove()), 20);
-            snprintf(hint_text, 32, "sim speed: %3.1f", 10.0/frames_per_step);
-            hint_timer = 30;
-        }
-
-
-        if (IsKeyPressed(KEY_TAB)) update();
-        if (IsKeyPressed(KEY_SPACE)) playing = !playing;
-
-        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
-            set_cell(cells, true, screen_to_cell(GetMouseX(), GetMouseY()));
-            tex = cells_to_texture(cells);
-        } else if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
-            set_cell(cells, false, screen_to_cell(GetMouseX(), GetMouseY()));
-            tex = cells_to_texture(cells);
-        }
-
-        if (playing) {
-            if (frames_till_next) frames_till_next--;
-            else frames_till_next = frames_per_step, update();
-        }
-
-        BeginDrawing();
-        ClearBackground(LIGHTGRAY);
-        DrawTextureEx(*tex, texture_pos, 0, texture_scale, WHITE);
-        if (hint_timer)
-            DrawText(hint_text, 10, 10, 40, BLACK), hint_timer--;
-        EndDrawing();
-    }
-
+    while (!WindowShouldClose()) loop(cells);
+ 
     CloseWindow();
 }
