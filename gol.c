@@ -156,15 +156,17 @@ void loop(cells_t * cells) {
         }
     }
 
-    if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
+    if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE) ||
+        (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && IsKeyDown(KEY_LEFT_ALT))
+    ) {
+        Vector2 delta = GetMouseDelta();
+        pan_x += delta.x / texture_scale, pan_y += delta.y / texture_scale;
+    } else if (IsMouseButtonDown(MOUSE_BUTTON_LEFT)) {
         set_cells(cells, true, brush_size, screen_to_cell(GetMouseX(), GetMouseY()));
         tex = cells_to_texture(cells);
     } else if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT)) {
         set_cells(cells, false, brush_size, screen_to_cell(GetMouseX(), GetMouseY()));
         tex = cells_to_texture(cells);
-    } else if (IsMouseButtonDown(MOUSE_BUTTON_MIDDLE)) {
-        Vector2 delta = GetMouseDelta();
-        pan_x += delta.x / texture_scale, pan_y += delta.y / texture_scale;
     }
     
     if (IsKeyPressed(KEY_SPACE)) playing = !playing;
@@ -191,7 +193,8 @@ void loop(cells_t * cells) {
     "KEYBINDS:\n"\
     " left mouse    - spawn cells\n"\
     " right mouse   - kill cells\n"\
-    " middle mouse  - pan\n"\
+    " alt+left mouse/\n"\
+    "  middle mouse - pan\n"\
     " scroll        - zoom\n"\
     " space         - toggle sim\n"\
     " tab           - step sim\n"\
